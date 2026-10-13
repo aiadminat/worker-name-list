@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Worker Name List</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #5f6b7a; --line: #dfe3e8;
+  --accent: #1f3864; --accent-ink: #ffffff; --accent-soft: #e8edf6;
+  --warn-bg: #fff4d6; --warn-ink: #7a5300; --bad-bg: #fde7e9; --bad-ink: #9c0006; --input: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --card: #1d2128; --text: #e7eaee; --muted: #9aa5b3; --line: #313844;
+    --accent: #7fa3e0; --accent-ink: #0f1420; --accent-soft: #233046;
+    --warn-bg: #3a2f12; --warn-ink: #f2cf7a; --bad-bg: #3d1d22; --bad-ink: #ff9aa5; --input: #171a20;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --card: #1d2128; --text: #e7eaee; --muted: #9aa5b3; --line: #313844;
+  --accent: #7fa3e0; --accent-ink: #0f1420; --accent-soft: #233046;
+  --warn-bg: #3a2f12; --warn-ink: #f2cf7a; --bad-bg: #3d1d22; --bad-ink: #ff9aa5; --input: #171a20;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Segoe UI", Arial, sans-serif; }
+.wrap { max-width: 900px; margin: 0 auto; padding: 20px 16px 48px; }
+h1 { margin: 0 0 2px; font-size: 22px; }
+.sub { margin: 0 0 16px; color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.card h2 { margin: 0 0 12px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 12px; flex: none; }
+button { font: inherit; border: 1px solid var(--line); background: var(--input); color: var(--text); padding: 8px 14px; border-radius: 7px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+input[type=text], input:not([type]) { text-transform: uppercase; }
+input, select { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; width: 100%; }
+label.f { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.status { margin-top: 10px; padding: 8px 10px; border-radius: 7px; background: var(--accent-soft); }
+.status.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.status.bad { background: var(--bad-bg); color: var(--bad-ink); }
+.hidden { display: none !important; }
+/* File box kept in the page (not display:none) so every browser opens the picker */
+.filebox { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+label.btn { display: inline-block; font: inherit; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); padding: 8px 14px; border-radius: 7px; cursor: pointer; }
+.filebox:focus-visible + label.btn { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.x { border: none; background: none; color: var(--muted); padding: 2px 8px; }
+.x:hover { color: var(--bad-ink); }
+.cidb { font-weight: 600; }
+.nw { white-space: nowrap; }
+@media (max-width: 600px) {
+  .pick input { width: 22px; height: 22px; }
+  #selBody td, #selBody + * td { font-size: 13px; }
+  .card { padding: 14px 12px; }
+}
+.cidb.expired, .cidb.none { color: var(--bad-ink); }
+.cidb.soon { color: var(--warn-ink); }
+.tablebox { overflow-x: auto; }
+.picklist { border: 1px solid var(--line); border-radius: 8px; max-height: 380px; overflow-y: auto; }
+.pick { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; margin: 0; }
+.pick:last-child { border-bottom: none; }
+.pick:hover { background: var(--accent-soft); }
+.pick.on { background: var(--accent-soft); }
+.pick input { width: 18px; height: 18px; flex: none; margin: 0; }
+.pick .nm { font-weight: 600; }
+.pick .ds { color: var(--muted); font-size: 12px; }
+.empty { padding: 12px; color: var(--muted); }
+/* Printable list */
+#sheet { background: #fff; color: #000; border: 1px solid var(--line); border-radius: 8px; padding: 24px; overflow-x: auto; }
+#sheet .co { text-align: center; font-size: 14px; font-weight: 700; letter-spacing: 1px; margin: 0 0 4px; }
+#sheet h3 { margin: 0 0 14px; font-size: 18px; text-align: center; letter-spacing: .5px; }
+#sheet .meta { display: grid; grid-template-columns: 140px 1fr; gap: 3px 10px; margin-bottom: 14px; font-size: 13px; }
+#sheet table.list th { background: #1f3864; color: #fff; font-size: 12px; border: 1px solid #999; }
+#sheet table.list td { border: 1px solid #999; color: #000; }
+#sheet .foot { margin-top: 18px; display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+/* Compact levels so short/medium lists fit one A4 page */
+#sheet.c1 .meta { font-size: 12px; margin-bottom: 10px; gap: 1px 10px; }
+#sheet.c1 h3 { margin-bottom: 8px; }
+#sheet.c1 table.list th, #sheet.c1 table.list td { padding: 4px 7px; font-size: 12px; }
+#sheet.c1 .foot { margin-top: 10px; }
+#sheet.c2 .co { font-size: 12px; }
+#sheet.c2 h3 { font-size: 15px; margin-bottom: 6px; }
+#sheet.c2 .meta { font-size: 11px; margin-bottom: 8px; gap: 0 10px; }
+#sheet.c2 table.list th, #sheet.c2 table.list td { padding: 2px 6px; font-size: 10.5px; line-height: 1.3; }
+#sheet.c2 .foot { margin-top: 8px; font-size: 10.5px; }
+/* Same box the printer uses: A4 minus 14mm margins */
+/* Page wrapper: its thead/tfoot repeat on every printed page and act as top/bottom margins */
+#sheet table.pg { width: 100%; border-collapse: collapse; }
+#sheet table.pg > thead > tr > td, #sheet table.pg > tfoot > tr > td, #sheet table.pg > tbody > tr > td { padding: 0; border: none; }
+#sheet .pgsp { height: 0; }
+#sheet .pghead { display: none; }
+#sheet.measure { width: 182mm; padding: 0; border: none; overflow: visible; }
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+  body { background: #fff; }
+  .wrap { padding: 0 14mm; max-width: none; }
+  .wrap > :not(#outSec), #outSec > :not(#sheet) { display: none !important; }
+  #outSec { border: none; padding: 0; margin: 0; background: #fff; }
+  #sheet { border: none; padding: 0; border-radius: 0; overflow: visible; }
+  #sheet thead { display: table-header-group; }
+  #sheet tfoot { display: table-footer-group; }
+  #sheet .pgsp { height: 14mm; vertical-align: top; }
+  #sheet .pghead { display: grid; grid-template-columns: 1fr auto 1fr; padding-top: 5mm; font: 9px Arial, sans-serif; color: #444; }
+  #sheet .pghead span:nth-child(2) { text-align: center; }
+  #sheet table.list tr, #sheet .foot { page-break-inside: avoid; break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Worker Name List</h1>
+  <p class="sub">Create a project worker name list for the client from the HR master export. The file is read only on this computer and is never uploaded.</p>
+
+  <section class="card">
+    <h2><span class="step">1</span> Open the master worker list from HR</h2>
+    <div class="row">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" class="filebox">
+      <label for="fileInput" class="btn" id="btnPick">Choose file…</label>
+      <span class="muted" id="fileName">No file chosen</span>
+    </div>
+    <div id="loadStatus" class="status hidden"></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">2</span> Project details</h2>
+    <div class="grid">
+      <div><label class="f" for="pName">Project name *</label><input id="pName"></div>
+      <div><label class="f" for="pClient">Client</label><input id="pClient"></div>
+      <div><label class="f" for="pSite">Site / location</label><input id="pSite"></div>
+      <div><label class="f" for="pDate">Submission date</label><input id="pDate" type="date"></div>
+      <div><label class="f" for="pBy">Prepared by (PM)</label><input id="pBy"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">3</span> Select workers</h2>
+    <div class="row" style="margin-bottom:8px">
+      <input id="search" placeholder="Search name or designation…" style="flex:2;min-width:180px" disabled>
+      <select id="dept" style="flex:1;min-width:160px" disabled><option value="">All departments</option></select>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <button id="btnAll" disabled>Tick all shown</button>
+      <button id="btnNone" disabled>Untick all shown</button>
+      <span class="muted" id="shown"></span>
+    </div>
+    <div class="picklist" id="pickList"><div class="empty">Open the master list first.</div></div>
+    <p class="note">Tick the workers for this project. They appear in the list below in the order you tick them.</p>
+    <div class="row" style="justify-content:space-between;margin:12px 0 6px">
+      <span>Selected: <b id="selCount">0</b></span>
+      <button id="btnClear">Clear all</button>
+    </div>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th style="width:44px">No.</th><th>Worker Name</th><th>NRIC/WP No.</th><th>CIDB Expiry</th><th style="width:40px"></th></tr></thead>
+        <tbody id="selBody"><tr><td colspan="5" class="muted">Nobody selected yet.</td></tr></tbody>
+      </table>
+    </div>
+    <div id="cidbNote" class="status warn hidden"></div>
+  </section>
+
+  <section class="card" id="outSec">
+    <h2><span class="step">4</span> Save as PDF and send to the client</h2>
+    <div class="row" style="margin-bottom:12px">
+      <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="optSign" style="width:auto"> Signature column</label>
+      <span style="flex:1"></span>
+      <button id="btnNew">New list</button>
+      <button class="primary" id="btnPdf">Save as PDF</button>
+    </div>
+    <div id="sheet"></div>
+    <p class="note">In the print window choose <b>Save as PDF</b> (Mac: PDF ▸ Save as PDF), then email the PDF to the client. Leave <b>Headers and footers</b> ticked or unticked – the page prints its own header, and the footer stays blank. Never send the HR master file.</p>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let workers = [];          // {code, name, nric, desig, dept}
+  const selected = [];       // emp codes, in order added
+  const byCode = c => workers.find(w => w.code === c);
+  const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  $("pDate").value = today();
+
+  // Force all typed text to CAPITAL LETTERS (keeps the cursor where it was)
+  document.addEventListener("input", e => {
+    const el = e.target;
+    if (el.tagName !== "INPUT" || (el.type && el.type !== "text")) return;
+    const up = el.value.toUpperCase();
+    if (up !== el.value) { const a = el.selectionStart, b = el.selectionEnd; el.value = up; el.setSelectionRange(a, b); }
+  }, true);
+
+  // ---------- read the HR export ----------
+  const COLS = {
+    code:  /^(emp\.?\s*code|employee\s*(no|code|id))\.?$/i,
+    name:  /^(name|employee\s*name|full\s*name|worker\s*name)$/i,
+    nric:  /(nric|ic\s*no|wp\s*no|passport)/i,
+    desig: /^(designation|position|job\s*title)$/i,
+    dept:  /^department$/i,
+    cidb:  /cidb/i
+  };
+  let hasCidb = false;
+  const pad2 = x => String(x).padStart(2, "0");
+  // CIDB expiry -> {text, status}: ok | soon (within 30 days) | expired | none
+  function cidbInfo(v) {
+    let d = null;
+    if (typeof v === "number" && v > 0) { const c = XLSX.SSF.parse_date_code(v); d = new Date(c.y, c.m - 1, c.d); }
+    else {
+      const t = String(v ?? "").trim();
+      let m;
+      if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) d = new Date(+m[1], +m[2] - 1, +m[3]);
+      else if ((m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/))) d = new Date(+m[3], +m[2] - 1, +m[1]);
+      else return { text: t ? t.toUpperCase() : "NOT FOUND", status: "none" };
+    }
+    const n = new Date(), t0 = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+    const days = Math.round((d - t0) / 864e5);
+    return { text: `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`, status: days < 0 ? "expired" : days <= 30 ? "soon" : "ok", days };
+  }
+  const cidbLabel = c => c.status === "expired" ? " (EXPIRED)" : c.status === "soon" ? ` (expires in ${c.days} day${c.days === 1 ? "" : "s"})` : "";
+  function parse(buf, fname) {
+    const wb = XLSX.read(buf, { type: "array" });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
+    const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" }); // real date values
+    let h = -1, map = {};
+    for (let i = 0; i < Math.min(rows.length, 30); i++) {
+      const cells = rows[i].map(c => String(c).trim()), m = {};
+      for (const [k, re] of Object.entries(COLS)) { const j = cells.findIndex(c => re.test(c)); if (j >= 0) m[k] = j; }
+      if (m.name !== undefined && m.nric !== undefined) { h = i; map = m; break; }
+    }
+    if (h < 0) throw new Error("This file has no 'Name' and 'NRIC/WP No.' columns. Please choose the master worker list exported from Infotech.");
+    let asOn = "";
+    rows.slice(0, h).forEach(r => r.forEach(c => { const m = String(c).match(/report\s*as\s*on\s*:?\s*(.+)/i); if (m) asOn = m[1].trim(); }));
+    const get = (r, k) => map[k] === undefined ? "" : String(r[map[k]] ?? "").trim();
+    const seen = new Set();
+    workers = [];
+    hasCidb = map.cidb !== undefined;
+    rows.slice(h + 1).forEach((r, i) => {
+      const name = get(r, "name").toUpperCase();
+      if (!name) return;
+      const code = get(r, "code") || "ROW" + (i + 1);
+      if (seen.has(code)) return;
+      seen.add(code);
+      const cidb = hasCidb ? cidbInfo((rawRows[h + 1 + i] || [])[map.cidb]) : null;
+      workers.push({ code, name, nric: get(r, "nric").toUpperCase(), desig: get(r, "desig"), dept: get(r, "dept"), cidb });
+    });
+    workers.sort((a, b) => a.name.localeCompare(b.name));
+    // keep earlier picks that are still in the new file
+    const keep = selected.filter(c => byCode(c));
+    selected.length = 0; selected.push(...keep);
+
+    $("fileName").textContent = fname;
+    const st = $("loadStatus");
+    st.classList.remove("hidden", "warn", "bad");
+    let msg = `Loaded <b>${workers.length}</b> workers` + (asOn ? ` · list as on <b>${esc(asOn)}</b>` : "");
+    const d = String(asOn).match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+    if (d) {
+      const n = new Date(), age = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(+d[3], +d[2] - 1, +d[1])) / 864e5);
+      if (age >= 1) { st.classList.add("warn"); msg += ` · ⚠ ${age} day${age > 1 ? "s" : ""} old. Ask HR for the latest list if workers have changed.`; }
+    }
+    const noId = workers.filter(w => !w.nric).length;
+    if (noId) { st.classList.add("warn"); msg += ` · ⚠ ${noId} worker(s) have no NRIC/WP No.`; }
+    if (hasCidb) {
+      const c = s => workers.filter(w => w.cidb.status === s).length;
+      const parts = [[c("expired"), "CIDB expired"], [c("soon"), "CIDB expiring within 30 days"], [c("none"), "no CIDB found"]].filter(x => x[0]);
+      if (parts.length) { st.classList.add("warn"); msg += " · ⚠ " + parts.map(x => x[0] + " " + x[1]).join(", "); }
+    } else msg += " · this file has no CIDB Expiry column";
+    st.innerHTML = msg;
+
+    const depts = [...new Set(workers.map(w => w.dept).filter(Boolean))].sort();
+    $("dept").innerHTML = '<option value="">All departments</option>' + depts.map(x => `<option>${esc(x)}</option>`).join("");
+    ["search", "dept", "btnAll", "btnNone"].forEach(id => $(id).disabled = false);
+    render();
+  }
+  function loadError(e) {
+    const st = $("loadStatus");
+    st.classList.remove("hidden", "warn"); st.classList.add("bad");
+    st.textContent = e.message || String(e);
+  }
+  $("fileInput").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    if (typeof XLSX === "undefined") { loadError(new Error("The Excel reader could not load. Connect to the internet, then reload this page and try again.")); e.target.value = ""; return; }
+    try { parse(await f.arrayBuffer(), f.name); } catch (err) { loadError(err); }
+    e.target.value = "";
+  };
+
+  // ---------- dropdown + selected list ----------
+  function visible() {
+    const q = $("search").value.trim().toLowerCase(), d = $("dept").value;
+    return workers.filter(w => (!d || w.dept === d) && (!q || (w.name + " " + w.desig).toLowerCase().includes(q)));
+  }
+  function toggle(code, on) {
+    const i = selected.indexOf(code);
+    if (on && i < 0) selected.push(code);
+    if (!on && i >= 0) selected.splice(i, 1);
+  }
+  function fillPickList() {
+    if (!workers.length) return;
+    const v = visible();
+    $("shown").textContent = v.length + " of " + workers.length + " shown";
+    $("pickList").innerHTML = v.length ? v.map(w => {
+      const on = selected.includes(w.code);
+      return `<label class="pick${on ? " on" : ""}"><input type="checkbox" data-code="${esc(w.code)}"${on ? " checked" : ""}>` +
+        `<span><span class="nm">${esc(w.name)}</span><br><span class="ds">${esc([w.desig, w.dept].filter(Boolean).join(" · "))}${w.cidb ? ` · CIDB: <span class="cidb ${w.cidb.status}">${esc(w.cidb.text + cidbLabel(w.cidb))}</span>` : ""}</span></span></label>`;
+    }).join("") : '<div class="empty">No match.</div>';
+  }
+  $("pickList").onchange = e => { const c = e.target.dataset.code; if (!c) return; toggle(c, e.target.checked); render(); };
+  $("search").oninput = fillPickList;
+  $("dept").onchange = fillPickList;
+  $("btnAll").onclick = () => { visible().forEach(w => toggle(w.code, true)); render(); };
+  $("btnNone").onclick = () => { visible().forEach(w => toggle(w.code, false)); render(); };
+  $("selBody").onclick = e => {
+    const b = e.target.closest("[data-rm]"); if (!b) return;
+    selected.splice(selected.indexOf(b.dataset.rm), 1); render();
+  };
+  $("btnClear").onclick = () => { if (selected.length && confirm("Remove all selected workers?")) { selected.length = 0; render(); } };
+  $("btnNew").onclick = () => {
+    if ((selected.length || $("pName").value) && !confirm("Start a new list? The current list will be cleared.")) return;
+    ["pName", "pClient", "pSite", "pBy"].forEach(id => $(id).value = "");
+    $("pDate").value = today(); selected.length = 0; render();
+  };
+
+  function render() {
+    fillPickList();
+    $("selCount").textContent = selected.length;
+    $("selBody").innerHTML = selected.length ? selected.map((c, i) => {
+      const w = byCode(c);
+      const cd = w.cidb ? `<span class="cidb ${w.cidb.status}">${esc(w.cidb.text + cidbLabel(w.cidb))}</span>` : '<span class="muted">—</span>';
+      return `<tr><td>${i + 1}</td><td>${esc(w.name)}</td><td class="nw">${esc(w.nric)}</td><td class="nw">${cd}</td><td><button class="x" data-rm="${esc(c)}" title="Remove">✕</button></td></tr>`;
+    }).join("") : '<tr><td colspan="5" class="muted">Nobody selected yet.</td></tr>';
+    const bad = selected.map(byCode).filter(w => w.cidb && w.cidb.status !== "ok");
+    const note = $("cidbNote");
+    if (bad.length) {
+      note.classList.remove("hidden");
+      note.innerHTML = `⚠ ${bad.length} selected worker(s) have an expired, expiring or missing CIDB card: ` +
+        bad.map(w => `<b>${esc(w.name)}</b> (${esc(w.cidb.text + cidbLabel(w.cidb))})`).join(", ") + ". Check with HR before sending to the client.";
+    } else note.classList.add("hidden");
+    renderSheet();
+  }
+
+  // ---------- printable list ----------
+  const proj = () => ({ name: $("pName").value.trim(), client: $("pClient").value.trim(), site: $("pSite").value.trim(), date: $("pDate").value, by: $("pBy").value.trim() });
+  const fmtDate = s => s ? s.split("-").reverse().join("/") : "";
+  function renderSheet() {
+    const p = proj(), sign = $("optSign").checked, list = selected.map(byCode);
+    $("sheet").innerHTML = `<table class="pg"><thead><tr><td class="pgsp"><div class="pghead"><span class="phDate"></span><span class="phTitle"></span><span></span></div></td></tr></thead><tfoot><tr><td class="pgsp"></td></tr></tfoot><tbody><tr><td>
+      <h3>WORKER NAME LIST</h3>
+      <div class="meta">
+        <b>Project</b><span>${esc(p.name) || "—"}</span>
+        <b>Client</b><span>${esc(p.client) || "—"}</span>
+        <b>Site / Location</b><span>${esc(p.site) || "—"}</span>
+        <b>Submission date</b><span>${esc(fmtDate(p.date)) || "—"}</span>
+        <b>Total workers</b><span>${list.length}</span>
+      </div>
+      <table class="list">
+        <thead><tr><th style="width:44px">No.</th><th>Worker Name</th><th>NRIC/WP No.</th>${hasCidb ? '<th style="width:110px">CIDB Expiry</th>' : ""}${sign ? '<th style="width:140px">Signature</th>' : ""}</tr></thead>
+        <tbody>${list.length ? list.map((w, i) => `<tr><td>${i + 1}</td><td>${esc(w.name)}</td><td>${esc(w.nric)}</td>${hasCidb ? `<td>${esc(w.cidb.text)}</td>` : ""}${sign ? "<td></td>" : ""}</tr>`).join("")
+          : `<tr><td colspan="${3 + (hasCidb ? 1 : 0) + (sign ? 1 : 0)}" style="color:#777">No workers selected.</td></tr>`}</tbody>
+      </table>
+      <div class="foot"><span>Prepared by: ${esc(p.by) || "____________________"}</span><span>Confidential – contains personal data</span></div>
+      </td></tr></tbody></table>`;
+  }
+  ["pName", "pClient", "pSite", "pDate", "pBy"].forEach(id => $(id).addEventListener("input", renderSheet));
+  $("optSign").addEventListener("change", renderSheet);
+
+  $("btnPdf").onclick = () => {
+    if (!workers.length) { alert("Open the master worker list first."); return; }
+    if (!proj().name) { alert("Enter the project name first."); $("pName").focus(); return; }
+    if (!selected.length) { alert("Add at least one worker."); return; }
+    const p = proj(), t = document.title;
+    document.title = ("WorkerList_" + p.name + "_" + p.date).replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").replace(/_$/, "");
+    window.print();
+    document.title = t;
+  };
+
+  // Fit on one A4 page by tightening spacing; only a long list flows onto more pages.
+  const PAGE_H = (297 - 28) * 96 / 25.4 - 12;   // printable height in px, small safety margin
+  function fitOnePage() {
+    const sh = $("sheet");
+    const n = new Date(), pad = x => String(x).padStart(2, "0");
+    const h12 = n.getHours() % 12 || 12, ampm = n.getHours() < 12 ? "AM" : "PM";
+    sh.querySelectorAll(".phDate").forEach(e => e.textContent = `${pad(n.getDate())}/${pad(n.getMonth() + 1)}/${String(n.getFullYear()).slice(2)}, ${h12}:${pad(n.getMinutes())} ${ampm}`);
+    sh.querySelectorAll(".phTitle").forEach(e => e.textContent = document.title);
+    sh.classList.remove("c1", "c2");
+    sh.classList.add("measure");
+    for (const level of ["", "c1", "c2"]) {
+      if (level) sh.classList.add(level);
+      if (sh.scrollHeight <= PAGE_H) break;
+      if (level === "c2") { sh.classList.remove("c2"); sh.classList.add("c1"); } // too long: readable multi-page
+      else if (level) sh.classList.remove(level);
+    }
+    sh.classList.remove("measure");
+  }
+  window.addEventListener("beforeprint", fitOnePage);
+  window.addEventListener("afterprint", () => $("sheet").classList.remove("c1", "c2"));
+
+  renderSheet();
+})();
+</script>
+</body>
+</html>
